@@ -9209,10 +9209,85 @@ Try yourself at https://trons.io!
             });
         }
         
+        // DEBUG FUNCTIONS FOR DATABASE TESTING
+        window.debugFirebase = {
+            // Check Firebase connection status
+            checkStatus: function() {
+                console.log('=== FIREBASE DEBUG STATUS ===');
+                console.log('Firebase Ready:', isFirebaseReady());
+                console.log('Auth:', !!auth);
+                console.log('Database:', !!db);
+                console.log('User ID:', userId);
+                console.log('Circuit Breaker Open:', firebaseCircuitBreakerOpen);
+                console.log('Failure Count:', firebaseFailureCount);
+                console.log('================');
+            },
+            
+            // Manually test save operation
+            testSave: async function(testScore = 100) {
+                console.log(`Testing save operation with score: ${testScore}`);
+                try {
+                    await savePersistentScore(testScore);
+                    console.log('✅ Save test completed - check console for success message');
+                } catch (error) {
+                    console.error('❌ Save test failed:', error);
+                }
+            },
+            
+            // Manually test load operation  
+            testLoad: async function() {
+                console.log('Testing load operation...');
+                try {
+                    await loadPersistentScore();
+                    console.log(`✅ Load test completed - current score: ${score}`);
+                } catch (error) {
+                    console.error('❌ Load test failed:', error);
+                }
+            },
+            
+            // Check what's in the database
+            checkDatabase: async function() {
+                if (!isFirebaseReady()) {
+                    console.log('❌ Firebase not ready - cannot check database');
+                    return;
+                }
+                
+                try {
+                    const playerDocRef = window.firebase.doc(db, 'players', userId);
+                    const playerDoc = await window.firebase.getDoc(playerDocRef);
+                    
+                    if (playerDoc.exists()) {
+                        const data = playerDoc.data();
+                        console.log('=== DATABASE CONTENT ===');
+                        console.log('User ID:', userId);
+                        console.log('Data:', data);
+                        console.log('=====================');
+                    } else {
+                        console.log('📄 No document exists for this user yet');
+                    }
+                } catch (error) {
+                    console.error('❌ Error checking database:', error);
+                }
+            }
+        };
+        
         // Save session score to player's persistent ether in Firestore
         async function savePersistentScore(sessionScore) {
-            if (!isFirebaseReady() || sessionScore <= 0) {
-                console.log('Firebase not ready, circuit breaker open, or no score to save');
+            console.log(`🔄 Attempting to save session score: ${sessionScore}`);
+            
+            if (!isFirebaseReady()) {
+                console.log('❌ Firebase not ready - save cancelled');
+                console.log('Debug info:', {
+                    db: !!db,
+                    auth: !!auth, 
+                    userId: userId,
+                    circuitBreakerOpen: firebaseCircuitBreakerOpen
+                });
+                return;
+            }
+            
+            if (sessionScore <= 0) {
+                console.log('❌ No score to save (score <= 0)');
                 return;
             }
             
@@ -9236,7 +9311,8 @@ Try yourself at https://trons.io!
                         totalSessions: (playerDoc.exists() ? (playerDoc.data().totalSessions || 0) + 1 : 1)
                     }, { merge: true });
                     
-                    console.log(`Session score ${sessionScore} added to persistent ether. Total: ${newTotalEther}`);
+                    console.log(`✅ SUCCESS: Session score ${sessionScore} added to persistent ether. Total: ${newTotalEther}`);
+                    console.log(`📊 Database updated for user: ${userId}`);
                     handleFirebaseSuccess();
                 };
                 
@@ -9271,7 +9347,7 @@ Try yourself at https://trons.io!
                     if (playerDoc.exists()) {
                         const data = playerDoc.data();
                         score = data.ether || 0;
-                        console.log(`Loaded persistent ether: ${score}`);
+                        console.log(`✅ SUCCESS: Loaded persistent ether: ${score} for user: ${userId}`);
                     } else {
                         // First time player - start with 0
                         score = 0;
