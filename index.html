@@ -3837,6 +3837,9 @@ const aiColors = [0x00ffff, 0xff00ff, 0x00ff00, 0xffff00, 0xff6600, 0x6600ff];
         let lastLeaderboardCheck = 0; // For showing motivational messages
         let playerName = "Player One"; // Default player name
         
+        // Track starting score to calculate session score properly
+        let gameStartScore = 0;
+        
         // Pause timing variables
         let pauseStartTime = 0;
         let totalPausedTime = 0;
@@ -6442,11 +6445,19 @@ Try yourself at https://trons.io!
             finalScoreDisplay.textContent = 'Final ETHER: ' + score;
             finalLevelDisplay.textContent = 'Sector Reached: ' + level;
             
+            // Calculate and save ONLY the session score (not total score)
+            const sessionScore = score - gameStartScore;
+            console.log(`🎯 Session complete - Starting score: ${gameStartScore}, Final score: ${score}, Session score: ${sessionScore}`);
+            
             // Save session score to Firebase (completely fire-and-forget)
             setTimeout(() => {
-                savePersistentScore(score).catch(error => {
-                    console.error('Failed to save score, but game continues:', error);
-                });
+                if (sessionScore > 0) {
+                    savePersistentScore(sessionScore).catch(error => {
+                        console.error('Failed to save score, but game continues:', error);
+                    });
+                } else {
+                    console.log('No session score to save (session score <= 0)');
+                }
             }, 100); // Delay to ensure game over screen shows first
             
             // Check if this score deserves the name input modal
@@ -6581,6 +6592,9 @@ Try yourself at https://trons.io!
 
             // Load persistent ether score instead of resetting to 0
             await loadPersistentScore();
+            gameStartScore = score; // Track starting score for session calculation
+            console.log(`🚀 Game starting with persistent score: ${gameStartScore}`);
+            
             level = 1; levelThreshold = 5; levelDisplay.textContent = 'Sector: ' + level;
             
             // Removed jackpot system - no longer needed
@@ -6637,6 +6651,13 @@ Try yourself at https://trons.io!
              const playerMotorcycleParts = createMotorcycle(0x000000, 0x000000, true);
              const newPlayerMotorcycle = playerMotorcycleParts.motorcycle;
              playerRiderBody = playerMotorcycleParts.riderBody;
+             
+             // CRITICAL: Reset player motorcycle position and world state
+             playerMotorcycle = newPlayerMotorcycle;
+             playerMotorcycle.position.set(0, 0, 0); // Reset to starting position
+             scene.add(playerMotorcycle);
+             
+             // Set rider references
              playerRiderHead = playerMotorcycleParts.riderHead;
              
              // Force red helmet for player
@@ -6652,10 +6673,8 @@ Try yourself at https://trons.io!
                  });
              }
              
-             // Replace global reference
-             playerMotorcycle = newPlayerMotorcycle;
-             playerMotorcycle.position.set(0, 0, 0);
-             scene.add(playerMotorcycle);
+             // Reset world generation tracking (CRITICAL for same track restart)
+             lastSceneryChangeZ = 0;
              
              // Recreate AI motorcycles
              aiMotorcycles.forEach(aiBike => scene.remove(aiBike)); aiMotorcycles.length = 0;
@@ -6666,7 +6685,10 @@ Try yourself at https://trons.io!
             roadSegments.forEach(segment => {
                 segment.material = sharedRoadMaterials[currentRoadTextureIndex];
             });
-            lastSceneryChangeZ = playerMotorcycle.position.z;
+            
+            // Reset camera to follow player properly
+            camera.position.set(0, 5, 10);
+            camera.lookAt(0, 0, 0);
 
             playerRandomSteerDirection = 0; playerRandomSteerTimer = 0;
             dialogueTimer = 0; lightningTimer = 0;
@@ -7026,6 +7048,10 @@ Try yourself at https://trons.io!
                 score = 0;
                 scoreDisplay.textContent = 'ETHER: ' + score;
             }
+            
+            // Set starting score for session tracking
+            gameStartScore = score;
+            console.log(`🎮 New game starting with score: ${gameStartScore}`);
             
             // Start the actual game
             startScreen.style.display = 'none';
