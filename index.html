@@ -3672,6 +3672,7 @@ const aiColors = [0x00ffff, 0xff00ff, 0x00ff00, 0xffff00, 0xff6600, 0x6600ff];
         let isGameOver = false;
         let gameMode = 'manual';
         let crashPosition = new THREE.Vector3();
+        let stars = null; // Starfield system (disabled but referenced in restart)
         let isBoosting = false;
         let manualBoostsUsed = 0; // Track manual boosts used this level bracket
         let isMiniBoostActive = false;
@@ -6667,8 +6668,8 @@ Try yourself at https://trons.io!
             updateRiderAppearance(1); // Reset rider appearance to level 1 (matte black)
             isJumping = false; jumpVelocity = 0;
 
-            // Reset starfield to initial relative position
-            if (stars) stars.position.set(0,0,0); // Or relative to camera if desired
+            // Reset starfield to initial relative position (if exists)
+            if (stars && stars.position) stars.position.set(0,0,0);
 
             boostParticles.forEach(particle => scene.remove(particle));
             boostParticles.length = 0;
