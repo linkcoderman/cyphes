@@ -6480,7 +6480,7 @@ Try yourself at https://trons.io!
             crashNoise.triggerAttackRelease("2n", Tone.now(), 0.5);
         }
 
-        function restartGame() {
+        async function restartGame() {
             console.log("=== RESTART GAME FUNCTION CALLED ===");
             console.log("Current game state - isGameOver:", isGameOver, "isGameRunning:", isGameRunning);
             
@@ -6568,7 +6568,7 @@ Try yourself at https://trons.io!
             // boostSound.currentTime = 0;
 
             // Load persistent ether score instead of resetting to 0
-            loadPersistentScore();
+            await loadPersistentScore();
             level = 1; levelThreshold = 5; levelDisplay.textContent = 'Sector: ' + level;
             
             // Removed jackpot system - no longer needed
@@ -6993,11 +6993,11 @@ Try yourself at https://trons.io!
         miniBoostButton.addEventListener('click', () => activateMiniBoost());
 
         // Start game immediately without countdown
-        function startGameImmediately() {
+        async function startGameImmediately() {
             console.log("Starting game immediately...");
             
             // Load persistent ether score for new game start
-            loadPersistentScore();
+            await loadPersistentScore();
             
             // Start the actual game
             startScreen.style.display = 'none';
@@ -7161,17 +7161,17 @@ Try yourself at https://trons.io!
                 if (Tone.context.state !== 'running') {
                     Tone.context.resume().then(() => {
                         console.log("AudioContext resumed successfully by start button.");
-                        startGameImmediately();
+                        startGameImmediately().catch(e => console.error('Error starting game:', e));
                     }).catch(e => {
                         console.log("AudioContext resume failed, but continuing with game:", e);
-                        startGameImmediately();
+                        startGameImmediately().catch(e => console.error('Error starting game:', e));
                     });
                 } else {
-                    startGameImmediately();
+                    startGameImmediately().catch(e => console.error('Error starting game:', e));
                 }
             } catch (e) {
                 console.log("Audio context error, but continuing with game:", e);
-                startGameImmediately();
+                startGameImmediately().catch(e => console.error('Error starting game:', e));
             }
         });
 
@@ -7205,7 +7205,7 @@ Try yourself at https://trons.io!
             // Simple, direct restart - no complex logic
             try {
                 console.log("Starting immediate restart process...");
-                restartGame();
+                restartGame().catch(e => console.error('Error restarting game:', e));
                 
                 // Double-check after restart
                 setTimeout(() => {
