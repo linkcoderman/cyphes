@@ -6434,8 +6434,10 @@ Try yourself at https://trons.io!
             finalScoreDisplay.textContent = 'Final ETHER: ' + score;
             finalLevelDisplay.textContent = 'Sector Reached: ' + level;
             
-            // Save session score to Firebase
-            savePersistentScore(score);
+            // Save session score to Firebase (non-blocking)
+            savePersistentScore(score).catch(error => {
+                console.error('Failed to save score, but game continues:', error);
+            });
             
             // Check if this score deserves the name input modal
             if (leaderboard.shouldShowNameInput(score)) {
@@ -6996,8 +6998,22 @@ Try yourself at https://trons.io!
         async function startGameImmediately() {
             console.log("Starting game immediately...");
             
-            // Load persistent ether score for new game start
-            await loadPersistentScore();
+            // Load persistent ether score for new game start (with short timeout for quick start)
+            try {
+                await Promise.race([
+                    loadPersistentScore(),
+                    new Promise((resolve) => setTimeout(() => {
+                        console.log('Quick start - loading with fallback score');
+                        score = 0;
+                        scoreDisplay.textContent = 'ETHER: ' + score;
+                        resolve();
+                    }, 2000)) // 2 second quick-start timeout
+                ]);
+            } catch (error) {
+                console.log('Quick start fallback due to error:', error);
+                score = 0;
+                scoreDisplay.textContent = 'ETHER: ' + score;
+            }
             
             // Start the actual game
             startScreen.style.display = 'none';
@@ -9069,6 +9085,18 @@ Try yourself at https://trons.io!
             return db !== null && auth !== null && userId !== null;
         }
         
+        // Backup mechanism: If Firebase takes too long to initialize, continue without it
+        setTimeout(() => {
+            if (!isFirebaseReady()) {
+                console.warn('Firebase initialization taking too long, continuing without persistence');
+                // Allow game to continue even without Firebase
+                if (typeof score === 'undefined') {
+                    score = 0;
+                    if (scoreDisplay) scoreDisplay.textContent = 'ETHER: ' + score;
+                }
+            }
+        }, 10000); // 10 second backup timeout
+        
         // Helper function for game to wait for Firebase
         function waitForFirebase() {
             return new Promise((resolve) => {
@@ -9090,27 +9118,37 @@ Try yourself at https://trons.io!
             }
             
             try {
-                const playerDocRef = window.firebase.doc(db, 'players', userId);
-                const playerDoc = await window.firebase.getDoc(playerDocRef);
+                // Add timeout to prevent hanging
+                const savePromise = async () => {
+                    const playerDocRef = window.firebase.doc(db, 'players', userId);
+                    const playerDoc = await window.firebase.getDoc(playerDocRef);
+                    
+                    let currentEther = 0;
+                    if (playerDoc.exists()) {
+                        const data = playerDoc.data();
+                        currentEther = data.ether || 0;
+                    }
+                    
+                    const newTotalEther = currentEther + sessionScore;
+                    
+                    await window.firebase.setDoc(playerDocRef, {
+                        ether: newTotalEther,
+                        lastPlayed: new Date().toISOString(),
+                        totalSessions: (playerDoc.exists() ? (playerDoc.data().totalSessions || 0) + 1 : 1)
+                    }, { merge: true });
+                    
+                    console.log(`Session score ${sessionScore} added to persistent ether. Total: ${newTotalEther}`);
+                };
                 
-                let currentEther = 0;
-                if (playerDoc.exists()) {
-                    const data = playerDoc.data();
-                    currentEther = data.ether || 0;
-                }
-                
-                const newTotalEther = currentEther + sessionScore;
-                
-                await window.firebase.setDoc(playerDocRef, {
-                    ether: newTotalEther,
-                    lastPlayed: new Date().toISOString(),
-                    totalSessions: (playerDoc.exists() ? (playerDoc.data().totalSessions || 0) + 1 : 1)
-                }, { merge: true });
-                
-                console.log(`Session score ${sessionScore} added to persistent ether. Total: ${newTotalEther}`);
+                // 5 second timeout for save operation
+                await Promise.race([
+                    savePromise(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Save timeout')), 5000))
+                ]);
                 
             } catch (error) {
-                console.error('Error saving persistent score:', error);
+                console.error('Error saving persistent score (game will continue):', error);
+                // Don't let save errors break the game flow
             }
         }
         
@@ -9124,23 +9162,32 @@ Try yourself at https://trons.io!
             }
             
             try {
-                const playerDocRef = window.firebase.doc(db, 'players', userId);
-                const playerDoc = await window.firebase.getDoc(playerDocRef);
+                // Add timeout to prevent hanging on load
+                const loadPromise = async () => {
+                    const playerDocRef = window.firebase.doc(db, 'players', userId);
+                    const playerDoc = await window.firebase.getDoc(playerDocRef);
+                    
+                    if (playerDoc.exists()) {
+                        const data = playerDoc.data();
+                        score = data.ether || 0;
+                        console.log(`Loaded persistent ether: ${score}`);
+                    } else {
+                        // First time player - start with 0
+                        score = 0;
+                        console.log('New player - starting with 0 ether');
+                    }
+                };
                 
-                if (playerDoc.exists()) {
-                    const data = playerDoc.data();
-                    score = data.ether || 0;
-                    console.log(`Loaded persistent ether: ${score}`);
-                } else {
-                    // First time player - start with 0
-                    score = 0;
-                    console.log('New player - starting with 0 ether');
-                }
+                // 3 second timeout for load operation
+                await Promise.race([
+                    loadPromise(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Load timeout')), 3000))
+                ]);
                 
                 scoreDisplay.textContent = 'ETHER: ' + score;
                 
             } catch (error) {
-                console.error('Error loading persistent score:', error);
+                console.error('Error loading persistent score (using fallback):', error);
                 // Fallback to 0 if there's an error
                 score = 0;
                 scoreDisplay.textContent = 'ETHER: ' + score;
