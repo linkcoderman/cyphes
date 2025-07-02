@@ -6699,8 +6699,11 @@ Try yourself at https://trons.io!
             // Particle system disabled - no background updates needed
              
             // Ensure complete UI reset
-            document.getElementById('dialogue-box').textContent = '';
-            document.getElementById('dialogue-box').style.display = 'none';
+            const dialogueBoxElement = document.getElementById('dialogue-box');
+            if (dialogueBoxElement) {
+                dialogueBoxElement.textContent = '';
+                dialogueBoxElement.style.display = 'none';
+            }
             
             // Finally confirm game running and start animation
             console.log("Confirming game running and starting animation loop...");
@@ -6718,9 +6721,8 @@ Try yourself at https://trons.io!
             }
             
             // Reset all visual elements to ensure clean start - STAY IN GAME
-            const startScreen = document.getElementById('start-screen');
-            const gameOverScreen = document.getElementById('game-over-screen');
-            if (startScreen) startScreen.style.display = 'none';
+            const startScreenReset = document.getElementById('start-screen');
+            if (startScreenReset) startScreenReset.style.display = 'none';
             if (gameOverScreen) gameOverScreen.style.display = 'none';
             
             // Ensure game canvas is visible and properly sized - KEEP PLAYING
@@ -7207,16 +7209,16 @@ Try yourself at https://trons.io!
             e.stopPropagation();
             
             // Immediately hide all possible interfering screens
-            const startScreen = document.getElementById('start-screen');
-            const gameOverScreen = document.getElementById('game-over-screen');
+            const startScreenRestart = document.getElementById('start-screen');
+            const gameOverScreenRestart = document.getElementById('game-over-screen');
             
-            if (startScreen) {
-                startScreen.style.display = 'none';
-                startScreen.style.visibility = 'hidden';
+            if (startScreenRestart) {
+                startScreenRestart.style.display = 'none';
+                startScreenRestart.style.visibility = 'hidden';
                 console.log("Pre-emptively hid start screen");
             }
-            if (gameOverScreen) {
-                gameOverScreen.style.display = 'none';
+            if (gameOverScreenRestart) {
+                gameOverScreenRestart.style.display = 'none';
                 console.log("Pre-emptively hid game over screen");
             }
             
@@ -9059,7 +9061,13 @@ Try yourself at https://trons.io!
                 // Get Firebase services
                 auth = window.firebase.getAuth(app);
                 db = window.firebase.getFirestore(app);
-                const analytics = window.firebase.getAnalytics(app);
+                
+                // Handle analytics separately as it may fail
+                try {
+                    const analytics = window.firebase.getAnalytics(app);
+                } catch (analyticsError) {
+                    console.warn('Analytics initialization failed, continuing without it:', analyticsError);
+                }
                 
                 // Set up authentication state listener
                 window.firebase.onAuthStateChanged(auth, async (user) => {
@@ -9077,13 +9085,28 @@ Try yourself at https://trons.io!
                             detail: { db, auth, userId } 
                         }));
                     } else {
-                        console.log('No user signed in, signing in anonymously...');
-                        await window.firebase.signInAnonymously(auth);
+                        console.log('No user signed in, trying anonymous auth...');
+                        try {
+                            await window.firebase.signInAnonymously(auth);
+                        } catch (authError) {
+                            console.warn('Anonymous authentication failed, continuing without Firebase:', authError);
+                            // Continue without authentication - game will work in offline mode
+                            handleFirebaseFailure();
+                            // Still dispatch event so game doesn't wait forever
+                            window.dispatchEvent(new CustomEvent('firebaseReady', { 
+                                detail: { db: null, auth: null, userId: null } 
+                            }));
+                        }
                     }
                 });
                 
             } catch (error) {
-                console.error('Firebase initialization error:', error);
+                console.error('Firebase initialization error, continuing without Firebase:', error);
+                handleFirebaseFailure();
+                // Ensure game continues without Firebase
+                window.dispatchEvent(new CustomEvent('firebaseReady', { 
+                    detail: { db: null, auth: null, userId: null } 
+                }));
             }
         });
         
