@@ -9130,19 +9130,41 @@ Try yourself at https://trons.io!
                             if (!auth) {
                                 throw new Error('Auth not initialized');
                             }
+                            
+                            console.log('🔐 Attempting anonymous authentication...');
                             await window.firebase.signInAnonymously(auth);
+                            console.log('✅ Anonymous authentication successful');
+                            
                         } catch (authError) {
-                            console.warn('Anonymous authentication failed, continuing without Firebase:', authError);
+                            console.warn('❌ Anonymous authentication failed:', authError);
                             console.warn('Auth error details:', {
                                 code: authError.code,
                                 message: authError.message,
-                                authConfigured: !!auth
+                                authConfigured: !!auth,
+                                errorType: typeof authError
                             });
+                            
+                            // Check for specific error codes
+                            if (authError.code === 'auth/operation-not-allowed') {
+                                console.error('🚫 Anonymous authentication is disabled in Firebase Console');
+                                console.log('💡 To fix: Go to Firebase Console > Authentication > Sign-in methods > Enable Anonymous');
+                            } else if (authError.code === 'auth/api-key-not-valid') {
+                                console.error('🔑 Firebase API key is invalid or restricted');
+                            } else if (authError.code === 'auth/invalid-api-key') {
+                                console.error('🔑 Firebase API key format is invalid');
+                            }
+                            
+                            // Try using a temporary offline user ID as fallback
+                            console.log('🔄 Falling back to offline mode with temporary user ID...');
+                            userId = 'offline_user_' + Math.random().toString(36).substr(2, 9);
+                            console.log('📱 Offline User ID generated:', userId);
+                            
                             // Continue without authentication - game will work in offline mode
                             handleFirebaseFailure();
-                            // Still dispatch event so game doesn't wait forever
+                            
+                            // Still dispatch event so game doesn't wait forever, but with offline user
                             window.dispatchEvent(new CustomEvent('firebaseReady', { 
-                                detail: { db: null, auth: null, userId: null } 
+                                detail: { db: null, auth: null, userId: userId, offline: true } 
                             }));
                         }
                     }
@@ -9161,6 +9183,11 @@ Try yourself at https://trons.io!
         // Helper function to check if Firebase is ready
         function isFirebaseReady() {
             return db !== null && auth !== null && userId !== null && !firebaseCircuitBreakerOpen;
+        }
+        
+        // Helper function to check if we're in offline mode
+        function isOfflineMode() {
+            return userId !== null && userId.startsWith('offline_user_');
         }
         
         // Circuit breaker logic
@@ -9215,12 +9242,18 @@ Try yourself at https://trons.io!
             checkStatus: function() {
                 console.log('=== FIREBASE DEBUG STATUS ===');
                 console.log('Firebase Ready:', isFirebaseReady());
+                console.log('Offline Mode:', isOfflineMode());
                 console.log('Auth:', !!auth);
                 console.log('Database:', !!db);
                 console.log('User ID:', userId);
                 console.log('Circuit Breaker Open:', firebaseCircuitBreakerOpen);
                 console.log('Failure Count:', firebaseFailureCount);
                 console.log('================');
+                
+                if (isOfflineMode()) {
+                    console.log('🔄 OFFLINE MODE: Game is using local storage fallback');
+                    console.log('💡 To enable Firebase: Check Firebase Console authentication settings');
+                }
             },
             
             // Manually test save operation
@@ -9276,14 +9309,28 @@ Try yourself at https://trons.io!
             console.log(`🔄 Attempting to save session score: ${sessionScore}`);
             
             if (!isFirebaseReady()) {
-                console.log('❌ Firebase not ready - save cancelled');
-                console.log('Debug info:', {
-                    db: !!db,
-                    auth: !!auth, 
-                    userId: userId,
-                    circuitBreakerOpen: firebaseCircuitBreakerOpen
-                });
-                return;
+                if (isOfflineMode()) {
+                    console.log('📱 Offline mode: Saving to localStorage instead');
+                    try {
+                        const currentScore = parseInt(localStorage.getItem('trons_persistent_ether') || '0');
+                        const newTotal = currentScore + sessionScore;
+                        localStorage.setItem('trons_persistent_ether', newTotal.toString());
+                        console.log(`✅ OFFLINE SAVE: Session score ${sessionScore} added. Total: ${newTotal}`);
+                        return;
+                    } catch (error) {
+                        console.error('❌ LocalStorage save failed:', error);
+                        return;
+                    }
+                } else {
+                    console.log('❌ Firebase not ready - save cancelled');
+                    console.log('Debug info:', {
+                        db: !!db,
+                        auth: !!auth, 
+                        userId: userId,
+                        circuitBreakerOpen: firebaseCircuitBreakerOpen
+                    });
+                    return;
+                }
             }
             
             if (sessionScore <= 0) {
@@ -9332,10 +9379,26 @@ Try yourself at https://trons.io!
         // Load persistent ether score from Firestore
         async function loadPersistentScore() {
             if (!isFirebaseReady()) {
-                console.log('Firebase not ready or circuit breaker open, starting with score 0');
-                score = 0;
-                scoreDisplay.textContent = 'ETHER: ' + score;
-                return;
+                if (isOfflineMode()) {
+                    console.log('📱 Offline mode: Loading from localStorage');
+                    try {
+                        const savedScore = parseInt(localStorage.getItem('trons_persistent_ether') || '0');
+                        score = savedScore;
+                        console.log(`✅ OFFLINE LOAD: Loaded persistent ether: ${score}`);
+                        scoreDisplay.textContent = 'ETHER: ' + score;
+                        return;
+                    } catch (error) {
+                        console.error('❌ LocalStorage load failed:', error);
+                        score = 0;
+                        scoreDisplay.textContent = 'ETHER: ' + score;
+                        return;
+                    }
+                } else {
+                    console.log('Firebase not ready or circuit breaker open, starting with score 0');
+                    score = 0;
+                    scoreDisplay.textContent = 'ETHER: ' + score;
+                    return;
+                }
             }
             
             try {
