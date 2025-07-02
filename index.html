@@ -39,11 +39,11 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-        import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+        import { getFirestore, doc, getDoc, setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
         import { getAnalytics } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-analytics.js';
         
         // Make Firebase functions available globally
-        window.firebase = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, getAnalytics };
+        window.firebase = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, getAnalytics, doc, getDoc, setDoc, updateDoc };
     </script>
 
     <style>
@@ -6434,6 +6434,9 @@ Try yourself at https://trons.io!
             finalScoreDisplay.textContent = 'Final ETHER: ' + score;
             finalLevelDisplay.textContent = 'Sector Reached: ' + level;
             
+            // Save session score to Firebase
+            savePersistentScore(score);
+            
             // Check if this score deserves the name input modal
             if (leaderboard.shouldShowNameInput(score)) {
                 // Delay showing high score modal to let game over screen appear first
@@ -6564,7 +6567,8 @@ Try yourself at https://trons.io!
             // boostSound.pause();
             // boostSound.currentTime = 0;
 
-            score = 0; scoreDisplay.textContent = 'ETHER: ' + score;
+            // Load persistent ether score instead of resetting to 0
+            loadPersistentScore();
             level = 1; levelThreshold = 5; levelDisplay.textContent = 'Sector: ' + level;
             
             // Removed jackpot system - no longer needed
@@ -6991,6 +6995,9 @@ Try yourself at https://trons.io!
         // Start game immediately without countdown
         function startGameImmediately() {
             console.log("Starting game immediately...");
+            
+            // Load persistent ether score for new game start
+            loadPersistentScore();
             
             // Start the actual game
             startScreen.style.display = 'none';
@@ -9073,6 +9080,71 @@ Try yourself at https://trons.io!
                     }, { once: true });
                 }
             });
+        }
+        
+        // Save session score to player's persistent ether in Firestore
+        async function savePersistentScore(sessionScore) {
+            if (!isFirebaseReady() || sessionScore <= 0) {
+                console.log('Firebase not ready or no score to save');
+                return;
+            }
+            
+            try {
+                const playerDocRef = window.firebase.doc(db, 'players', userId);
+                const playerDoc = await window.firebase.getDoc(playerDocRef);
+                
+                let currentEther = 0;
+                if (playerDoc.exists()) {
+                    const data = playerDoc.data();
+                    currentEther = data.ether || 0;
+                }
+                
+                const newTotalEther = currentEther + sessionScore;
+                
+                await window.firebase.setDoc(playerDocRef, {
+                    ether: newTotalEther,
+                    lastPlayed: new Date().toISOString(),
+                    totalSessions: (playerDoc.exists() ? (playerDoc.data().totalSessions || 0) + 1 : 1)
+                }, { merge: true });
+                
+                console.log(`Session score ${sessionScore} added to persistent ether. Total: ${newTotalEther}`);
+                
+            } catch (error) {
+                console.error('Error saving persistent score:', error);
+            }
+        }
+        
+        // Load persistent ether score from Firestore
+        async function loadPersistentScore() {
+            if (!isFirebaseReady()) {
+                console.log('Firebase not ready, starting with score 0');
+                score = 0;
+                scoreDisplay.textContent = 'ETHER: ' + score;
+                return;
+            }
+            
+            try {
+                const playerDocRef = window.firebase.doc(db, 'players', userId);
+                const playerDoc = await window.firebase.getDoc(playerDocRef);
+                
+                if (playerDoc.exists()) {
+                    const data = playerDoc.data();
+                    score = data.ether || 0;
+                    console.log(`Loaded persistent ether: ${score}`);
+                } else {
+                    // First time player - start with 0
+                    score = 0;
+                    console.log('New player - starting with 0 ether');
+                }
+                
+                scoreDisplay.textContent = 'ETHER: ' + score;
+                
+            } catch (error) {
+                console.error('Error loading persistent score:', error);
+                // Fallback to 0 if there's an error
+                score = 0;
+                scoreDisplay.textContent = 'ETHER: ' + score;
+            }
         }
     </script>
 </body>
