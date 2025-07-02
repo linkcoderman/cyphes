@@ -3677,7 +3677,10 @@ const aiColors = [0x00ffff, 0xff00ff, 0x00ff00, 0xffff00, 0xff6600, 0x6600ff];
         let manualBoostsUsed = 0; // Track manual boosts used this level bracket
         let isMiniBoostActive = false;
         let miniBoostTimer = null;
-        let isGameRunning = false;
+        
+        // Add debugging wrapper for isGameRunning changes
+        let _isGameRunning = false;
+        let isGameRunning = false; // Keep original declaration for compatibility
         let isInvincible = false;
         let invincibilityTimer = null;
         let gamePaused = false;
@@ -5249,9 +5252,12 @@ Try yourself at https://trons.io!
             window.animationFrameId = requestAnimationFrame(animate);
             
             if (isGameOver || !isGameRunning || gamePaused) {
-                // Debug logging for early return
+                // Enhanced debug logging for early return
                 if (isGameOver) console.log("Animate early return: isGameOver =", isGameOver);
-                if (!isGameRunning) console.log("Animate early return: isGameRunning =", isGameRunning);
+                if (!isGameRunning) {
+                    console.log("Animate early return: isGameRunning =", isGameRunning);
+                    console.trace("isGameRunning false - call stack:");
+                }
                 if (gamePaused) console.log("Animate early return: gamePaused =", gamePaused);
                 
                 renderer.render(scene, camera);
@@ -6403,7 +6409,8 @@ Try yourself at https://trons.io!
         }
 
         function gameOver() {
-            console.log("Game Over triggered - stopping all systems");
+            console.log("=== GAME OVER TRIGGERED ===");
+            console.trace("Game Over call stack"); // Add stack trace to debug unexpected calls
             isGameOver = true; 
             isGameRunning = false; 
             gamePaused = true;
@@ -8325,6 +8332,12 @@ Try yourself at https://trons.io!
          function updateEngineSound() {
              if (audioSystemEnabled && engineSynth && engineSynth.state === 'started' && typeof currentMoveSpeed !== 'undefined' && isGameRunning && !isGameOver) {
                  try {
+                     // Additional null checks for engineSynth properties
+                     if (!engineSynth.frequency || !engineSynth.volume) {
+                         console.log("Engine synth properties not available");
+                         return;
+                     }
+                     
                      const baseFreq = 60;
                      const speedMultiplier = currentMoveSpeed / initialBaseMoveSpeed;
                      const newFreq = Math.max(40, Math.min(120, baseFreq + (speedMultiplier * 40))); // Clamp frequency
@@ -8395,11 +8408,17 @@ Try yourself at https://trons.io!
         
         // Safe engine synth start (prevents multiple starts)
         function startEngineSynth() {
-            if (audioSystemEnabled && engineSynth && engineSynth.state !== 'started') {
+            if (audioSystemEnabled && engineSynth) {
                 try {
-                    engineSynth.start();
+                    // Additional check to ensure engineSynth is properly configured
+                    if (typeof engineSynth.start === 'function' && engineSynth.state !== 'started') {
+                        engineSynth.start();
+                    }
                 } catch(e) {
                     console.log("Engine synth start error:", e);
+                    // Disable audio system if engine synth consistently fails
+                    audioSystemEnabled = false;
+                    console.log("Audio system disabled due to engine synth errors");
                 }
             }
         }
@@ -9059,9 +9078,28 @@ Try yourself at https://trons.io!
                 // Initialize Firebase app
                 const app = window.firebase.initializeApp(firebaseConfig);
                 
-                // Get Firebase services
-                auth = window.firebase.getAuth(app);
-                db = window.firebase.getFirestore(app);
+                                    // Get Firebase services
+                    auth = window.firebase.getAuth(app);
+                    db = window.firebase.getFirestore(app);
+                    
+                    // Set up debugging wrapper for isGameRunning (after Firebase init)
+                    if (typeof window.isGameRunningWrapperSetup === 'undefined') {
+                        window.isGameRunningWrapperSetup = true;
+                        let gameRunningValue = isGameRunning;
+                        Object.defineProperty(window, 'debugIsGameRunning', {
+                            get: function() { return gameRunningValue; },
+                            set: function(value) {
+                                if (gameRunningValue !== value) {
+                                    console.log(`🎮 isGameRunning changed: ${gameRunningValue} → ${value}`);
+                                    if (!value) {
+                                        console.trace("isGameRunning set to false - call stack:");
+                                    }
+                                }
+                                gameRunningValue = value;
+                                isGameRunning = value; // Update the actual variable
+                            }
+                        });
+                    }
                 
                 // Handle analytics separately as it may fail
                 try {
@@ -9088,9 +9126,18 @@ Try yourself at https://trons.io!
                     } else {
                         console.log('No user signed in, trying anonymous auth...');
                         try {
+                            // Add additional error checking for Firebase auth
+                            if (!auth) {
+                                throw new Error('Auth not initialized');
+                            }
                             await window.firebase.signInAnonymously(auth);
                         } catch (authError) {
                             console.warn('Anonymous authentication failed, continuing without Firebase:', authError);
+                            console.warn('Auth error details:', {
+                                code: authError.code,
+                                message: authError.message,
+                                authConfigured: !!auth
+                            });
                             // Continue without authentication - game will work in offline mode
                             handleFirebaseFailure();
                             // Still dispatch event so game doesn't wait forever
